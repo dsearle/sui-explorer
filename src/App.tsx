@@ -86,12 +86,22 @@ export default function App() {
 
   const handleNodeClickRef = useRef<(id: string) => void>(() => {})
 
+  const handleTxClick = useCallback((digest: string) => {
+    setSearchMode('transaction')
+    setMode('transaction')
+    transaction.fetchTransaction(digest)
+    updateUrl('transaction', digest, network)
+  }, [network, transaction])
+
+  const handleTxClickRef = useRef(handleTxClick)
+  handleTxClickRef.current = handleTxClick
+
   const handleNodeClick = useCallback((id: string) => {
     setMode('object')
-    objectGraph.fetchObject(id, handleNodeClickRef.current)
+    objectGraph.fetchObject(id, handleNodeClickRef.current, handleTxClickRef.current)
     setPanelOpen(true)
     updateUrl('object', id, network)
-  }, [network, objectGraph])
+  }, [network, objectGraph])  // eslint-disable-line react-hooks/exhaustive-deps
 
   handleNodeClickRef.current = handleNodeClick
 
@@ -99,7 +109,7 @@ export default function App() {
   useEffect(() => {
     if (initial.query) {
       const m = initial.searchMode
-      if (m === 'object') objectGraph.fetchObject(initial.query, handleNodeClick)
+      if (m === 'object') objectGraph.fetchObject(initial.query, handleNodeClick, handleTxClick)
       if (m === 'transaction') transaction.fetchTransaction(initial.query)
       if (m === 'package') pkg.fetchPackage(initial.query)
     }
@@ -109,7 +119,7 @@ export default function App() {
   const handleSearch = useCallback((id: string) => {
     setMode(searchMode)
     if (searchMode === 'object') {
-      objectGraph.fetchObject(id, handleNodeClick)
+      objectGraph.fetchObject(id, handleNodeClick, handleTxClick)
       setPanelOpen(true)
     } else if (searchMode === 'transaction') {
       transaction.fetchTransaction(id)
@@ -286,7 +296,11 @@ export default function App() {
               />
             </ReactFlowProvider>
             {panelOpen && objectGraph.objectData && (
-              <ObjectPanel data={objectGraph.objectData} onClose={() => setPanelOpen(false)} />
+              <ObjectPanel
+                data={objectGraph.objectData}
+                onClose={() => setPanelOpen(false)}
+                onTxClick={handleTxClick}
+              />
             )}
           </>
         )}

@@ -21,7 +21,7 @@ export function useObjectGraph(network: Network) {
   })
 
   const fetchObject = useCallback(
-    async (objectId: string, onNodeClick: (id: string) => void) => {
+    async (objectId: string, onNodeClick: (id: string) => void, onTxClick?: (digest: string) => void) => {
       const trimmed = objectId.trim()
       if (!trimmed) return
 
@@ -91,7 +91,8 @@ export function useObjectGraph(network: Network) {
           objectResponse,
           dynamicFields,
           referencedObjects,
-          onNodeClick
+          onNodeClick,
+          onTxClick
         )
 
         setState({

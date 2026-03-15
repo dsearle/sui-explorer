@@ -3,6 +3,7 @@ import type { SuiObjectResponse } from '@mysten/sui/jsonRpc'
 interface Props {
   data: SuiObjectResponse | null
   onClose: () => void
+  onTxClick?: (digest: string) => void
 }
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
@@ -27,7 +28,7 @@ function CopyButton({ text }: { text: string }) {
   )
 }
 
-export function ObjectPanel({ data, onClose }: Props) {
+export function ObjectPanel({ data, onClose, onTxClick }: Props) {
   if (!data?.data) return null
 
   const obj = data.data
@@ -83,8 +84,17 @@ export function ObjectPanel({ data, onClose }: Props) {
           <Row
             label="Previous Transaction"
             value={
-              <span className="flex items-center flex-wrap">
-                {obj.previousTransaction}
+              <span className="flex items-center flex-wrap gap-1">
+                {onTxClick ? (
+                  <button
+                    onClick={() => onTxClick(obj.previousTransaction!)}
+                    className="text-[#fb923c] hover:underline font-mono break-all text-left"
+                  >
+                    {obj.previousTransaction}
+                  </button>
+                ) : (
+                  <span className="break-all">{obj.previousTransaction}</span>
+                )}
                 <CopyButton text={obj.previousTransaction} />
               </span>
             }

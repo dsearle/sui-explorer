@@ -35,7 +35,8 @@ export function buildGraph(
   objectResponse: SuiObjectResponse,
   dynamicFields: DynamicFieldInfo[],
   referencedObjects: SuiObjectResponse[],
-  onNodeClick: (id: string) => void
+  onNodeClick: (id: string) => void,
+  onTxClick?: (digest: string) => void
 ): GraphData {
   const nodes: Node[] = []
   const edges: Edge[] = []
@@ -119,17 +120,18 @@ export function buildGraph(
 
   // --- Previous transaction node ---
   if (obj.previousTransaction) {
-    const txId = `tx-${obj.previousTransaction}`
+    const txDigest = obj.previousTransaction
+    const txId = `tx-${txDigest}`
     nodes.push({
       id: txId,
       type: 'objectNode',
       position: { x: 300, y: -150 },
       data: {
-        label: `Tx\n${shortId(obj.previousTransaction)}`,
-        fullId: undefined,
+        label: `Tx\n${shortId(txDigest)}`,
+        fullId: txDigest,
         nodeType: 'transaction',
         typeLabel: 'Transaction',
-        onClick: undefined,
+        onClick: onTxClick ? () => onTxClick(txDigest) : undefined,
       },
     })
     edges.push({
