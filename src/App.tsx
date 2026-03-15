@@ -270,7 +270,10 @@ export default function App() {
         {mode === 'directory' && (
           <Directory
             onSelectProtocol={handleSelectProtocol}
-            onSearchPackage={handleExplorePackage}
+            onSelectEntry={(entry) => {
+              // Unclaimed entries — open their website or just show a toast
+              if (entry.website) window.open(entry.website, '_blank', 'noopener,noreferrer')
+            }}
           />
         )}
 

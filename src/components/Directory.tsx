@@ -1,151 +1,193 @@
 import { useState, useMemo } from 'react'
-import { PROTOCOLS, CATEGORIES, type Protocol, type ProtocolCategory } from '../data/protocols'
+import { useDirectory, type DirectoryEntry, type BadgeTier } from '../hooks/useDirectory'
+import { ClaimModal } from './ClaimModal'
+import type { Protocol } from '../data/protocols'
 
 interface Props {
   onSelectProtocol: (protocol: Protocol) => void
-  onSearchPackage: (packageId: string) => void
+  onSelectEntry: (entry: DirectoryEntry) => void
 }
 
-const CATEGORY_COLORS: Record<ProtocolCategory, string> = {
-  DeFi: 'text-blue-400 bg-blue-400/10 border-blue-400/20',
-  Lending: 'text-purple-400 bg-purple-400/10 border-purple-400/20',
-  DEX: 'text-cyan-400 bg-cyan-400/10 border-cyan-400/20',
-  NFT: 'text-pink-400 bg-pink-400/10 border-pink-400/20',
-  Infrastructure: 'text-[#6fbcf0] bg-[#6fbcf0]/10 border-[#6fbcf0]/20',
-  Gaming: 'text-green-400 bg-green-400/10 border-green-400/20',
-  Staking: 'text-yellow-400 bg-yellow-400/10 border-yellow-400/20',
-  Bridge: 'text-orange-400 bg-orange-400/10 border-orange-400/20',
+// ─── Badge ──────────────────────────────────────────────────────────────────
+const BADGE: Record<BadgeTier, { label: string; icon: string; className: string }> = {
+  official:  { label: 'Official',  icon: '🏅', className: 'text-[#fbbf24] bg-[#fbbf24]/10 border-[#fbbf24]/20' },
+  verified:  { label: 'Verified',  icon: '✅', className: 'text-[#34d399] bg-[#34d399]/10 border-[#34d399]/20' },
+  unclaimed: { label: 'Unclaimed', icon: '🔍', className: 'text-gray-400 bg-gray-400/10 border-gray-400/20' },
 }
 
-function ProtocolCard({ protocol, onSelect }: { protocol: Protocol; onSelect: () => void }) {
+// ─── Tier filter tabs ────────────────────────────────────────────────────────
+const TIER_FILTERS: { id: BadgeTier | 'all'; label: string }[] = [
+  { id: 'all',       label: 'All' },
+  { id: 'official',  label: '🏅 Official' },
+  { id: 'unclaimed', label: '🔍 Unclaimed' },
+]
+
+// ─── Format large TVL for ecosystem stats ───────────────────────────────────
+function formatBigTvl(tvl: number): string {
+  if (tvl >= 1_000_000_000) return `$${(tvl / 1_000_000_000).toFixed(1)}B`
+  if (tvl >= 1_000_000) return `$${(tvl / 1_000_000).toFixed(0)}M`
+  return `$${tvl.toLocaleString()}`
+}
+
+// ─── Card ────────────────────────────────────────────────────────────────────
+function ProtocolCard({
+  entry,
+  onSelect,
+  onClaim,
+}: {
+  entry: DirectoryEntry
+  onSelect: () => void
+  onClaim: () => void
+}) {
   const [hovered, setHovered] = useState(false)
+  const badge = BADGE[entry.tier]
+  const isUnclaimed = entry.tier === 'unclaimed'
 
   return (
     <div
-      onClick={onSelect}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      className="relative group cursor-pointer rounded-2xl border border-[#30363d] bg-[#0d1117]
-        overflow-hidden transition-all duration-300 hover:border-opacity-60 hover:shadow-2xl
-        hover:-translate-y-0.5"
+      className={`relative group rounded-2xl border border-[#30363d] bg-[#0d1117]
+        overflow-hidden transition-all duration-300 hover:-translate-y-0.5
+        ${isUnclaimed ? 'opacity-80 hover:opacity-100' : ''}`}
       style={{
         boxShadow: hovered
-          ? `0 0 30px ${protocol.color}20, 0 4px 20px rgba(0,0,0,0.4)`
+          ? `0 0 30px ${entry.color}25, 0 4px 20px rgba(0,0,0,0.4)`
           : '0 2px 8px rgba(0,0,0,0.2)',
       }}
     >
-      {/* Gradient header strip */}
-      <div
-        className="h-1.5 w-full"
-        style={{ background: `linear-gradient(90deg, ${protocol.color}, ${protocol.colorTo})` }}
-      />
+      {/* Top gradient strip */}
+      <div className="h-1 w-full"
+        style={{ background: `linear-gradient(90deg, ${entry.color}, ${entry.colorTo})` }} />
 
-      {/* Glow effect on hover */}
-      <div
-        className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none rounded-2xl"
-        style={{
-          background: `radial-gradient(ellipse at top left, ${protocol.color}08 0%, transparent 60%)`,
-        }}
-      />
+      {/* Hover glow */}
+      <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity
+        duration-500 pointer-events-none"
+        style={{ background: `radial-gradient(ellipse at top left, ${entry.color}08, transparent 60%)` }} />
 
-      <div className="p-5">
-        {/* Header */}
+      <div className="p-4">
+        {/* Header row */}
         <div className="flex items-start justify-between mb-3">
-          <div className="flex items-center gap-3">
-            <div
-              className="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
-              style={{ background: `linear-gradient(135deg, ${protocol.color}30, ${protocol.colorTo}20)` }}
-            >
-              {protocol.emoji}
-            </div>
+          <div className="flex items-center gap-2.5">
+            {/* Logo or emoji */}
+            {entry.logo ? (
+              <div className="w-9 h-9 rounded-xl overflow-hidden flex-shrink-0 bg-[#21262d]
+                flex items-center justify-center border border-[#30363d]">
+                <img src={entry.logo} alt="" className="w-7 h-7 object-contain"
+                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
+              </div>
+            ) : (
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center text-xl
+                flex-shrink-0"
+                style={{ background: `linear-gradient(135deg, ${entry.color}30, ${entry.colorTo}20)` }}>
+                {entry.emoji}
+              </div>
+            )}
             <div>
-              <h3 className="text-sm font-bold text-white">{protocol.name}</h3>
-              <span className={`inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full border mt-0.5
-                ${CATEGORY_COLORS[protocol.category]}`}>
-                {protocol.category}
-              </span>
+              <h3 className="text-sm font-bold text-white leading-tight">{entry.name}</h3>
+              <span className="text-[10px] text-gray-500">{entry.category}</span>
             </div>
           </div>
-          {protocol.featured && (
-            <span className="text-[10px] bg-[#6fbcf0]/10 text-[#6fbcf0] border border-[#6fbcf0]/20
-              px-2 py-0.5 rounded-full font-semibold flex-shrink-0">
-              Featured
-            </span>
-          )}
+
+          {/* Badge */}
+          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border
+            flex-shrink-0 ${badge.className}`}>
+            {badge.icon} {badge.label}
+          </span>
         </div>
 
         {/* Tagline */}
-        <p className="text-xs text-gray-400 leading-relaxed mb-4 line-clamp-2">
-          {protocol.tagline}
+        <p className="text-[11px] text-gray-400 leading-relaxed mb-3 line-clamp-2">
+          {entry.tagline}
         </p>
 
-        {/* Stats row */}
-        <div className="flex items-center gap-3 mb-4">
-          <div className="flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full" style={{ background: protocol.color }} />
-            <span className="text-[10px] text-gray-500">
-              {protocol.packages.length} package{protocol.packages.length !== 1 ? 's' : ''}
-            </span>
+        {/* TVL */}
+        {entry.tvlUsd && entry.tvlUsd !== '—' && (
+          <div className="flex items-center gap-1.5 mb-3">
+            <span className="text-[10px] text-gray-600 uppercase tracking-wider">TVL</span>
+            <span className="text-sm font-bold text-[#34d399]">{entry.tvlUsd}</span>
           </div>
-          {protocol.keyObjects && protocol.keyObjects.length > 0 && (
-            <div className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#34d399]" />
-              <span className="text-[10px] text-gray-500">
-                {protocol.keyObjects.length} key object{protocol.keyObjects.length !== 1 ? 's' : ''}
-              </span>
-            </div>
+        )}
+
+        {/* Action row */}
+        <div className="pt-2.5 border-t border-[#21262d] flex items-center justify-between">
+          {isUnclaimed ? (
+            <>
+              <span className="text-[10px] text-gray-600">Not yet curated</span>
+              <button
+                onClick={(e) => { e.stopPropagation(); onClaim() }}
+                className="flex items-center gap-1 text-[10px] font-bold px-3 py-1.5 rounded-lg
+                  transition-colors bg-[#fbbf24]/10 text-[#fbbf24] border border-[#fbbf24]/20
+                  hover:bg-[#fbbf24]/20"
+              >
+                🙋 Claim
+              </button>
+            </>
+          ) : (
+            <>
+              <span className="text-[10px] text-gray-600">Click to explore</span>
+              <button
+                onClick={onSelect}
+                className="flex items-center gap-1 text-[10px] font-semibold transition-colors"
+                style={{ color: entry.color }}
+              >
+                Explore
+                <svg className="w-3 h-3 group-hover:translate-x-0.5 transition-transform"
+                  fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5}
+                    d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            </>
           )}
-        </div>
-
-        {/* Tags */}
-        <div className="flex flex-wrap gap-1.5">
-          {protocol.tags.slice(0, 4).map((tag) => (
-            <span key={tag} className="text-[9px] px-1.5 py-0.5 rounded bg-[#21262d] text-gray-500 font-mono">
-              {tag}
-            </span>
-          ))}
-        </div>
-
-        {/* Explore button */}
-        <div className="mt-4 pt-3 border-t border-[#21262d] flex items-center justify-between">
-          <span className="text-xs text-gray-500">Click to explore</span>
-          <div
-            className="flex items-center gap-1 text-xs font-semibold transition-colors"
-            style={{ color: protocol.color }}
-          >
-            Explore
-            <svg className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" fill="none"
-              viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
-            </svg>
-          </div>
         </div>
       </div>
     </div>
   )
 }
 
-function HeroSection() {
+// ─── Ecosystem stats bar ─────────────────────────────────────────────────────
+function StatsBar({ stats, loading }: {
+  stats: { total: number; official: number; unclaimed: number; totalTvl: number }
+  loading: boolean
+}) {
+  return (
+    <div className="flex items-center gap-6 flex-wrap justify-center text-center py-4">
+      {[
+        { label: 'Protocols', value: loading ? '…' : stats.total.toString() },
+        { label: 'Official', value: loading ? '…' : stats.official.toString(), color: '#fbbf24' },
+        { label: 'Unclaimed', value: loading ? '…' : stats.unclaimed.toString(), color: '#94a3b8' },
+        { label: 'Total TVL', value: loading ? '…' : formatBigTvl(stats.totalTvl), color: '#34d399' },
+      ].map(({ label, value, color }) => (
+        <div key={label}>
+          <div className="text-lg font-bold text-white" style={color ? { color } : undefined}>
+            {value}
+          </div>
+          <div className="text-[10px] text-gray-500 uppercase tracking-wider">{label}</div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ─── Hero ────────────────────────────────────────────────────────────────────
+function HeroSection({ stats, loading }: { stats: ReturnType<typeof useDirectory>['stats']; loading: boolean }) {
   return (
     <div className="relative overflow-hidden">
-      {/* Background grid */}
       <div className="absolute inset-0 opacity-[0.03]"
         style={{
           backgroundImage: 'linear-gradient(#6fbcf0 1px, transparent 1px), linear-gradient(90deg, #6fbcf0 1px, transparent 1px)',
           backgroundSize: '40px 40px',
-        }}
-      />
-      {/* Radial glow */}
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] opacity-20 pointer-events-none"
-        style={{ background: 'radial-gradient(ellipse at top, #6fbcf0 0%, transparent 70%)' }}
-      />
+        }} />
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] opacity-20
+        pointer-events-none"
+        style={{ background: 'radial-gradient(ellipse at top, #6fbcf0 0%, transparent 70%)' }} />
 
-      <div className="relative px-8 pt-12 pb-8 text-center max-w-3xl mx-auto">
-        {/* Logo mark */}
-        <div className="flex items-center justify-center mb-6">
-          <div className="w-16 h-16 rounded-2xl flex items-center justify-center"
+      <div className="relative px-8 pt-10 pb-4 text-center max-w-3xl mx-auto">
+        <div className="flex items-center justify-center mb-5">
+          <div className="w-14 h-14 rounded-2xl flex items-center justify-center"
             style={{ background: 'linear-gradient(135deg, #6fbcf0, #3b82f6)' }}>
-            <svg viewBox="0 0 32 32" className="w-9 h-9 text-white" fill="currentColor">
+            <svg viewBox="0 0 32 32" className="w-8 h-8 text-white" fill="currentColor">
               <circle cx="16" cy="6" r="4" />
               <circle cx="6" cy="22" r="4" />
               <circle cx="26" cy="22" r="4" />
@@ -156,50 +198,62 @@ function HeroSection() {
           </div>
         </div>
 
-        <h1 className="text-3xl font-bold text-white mb-3 tracking-tight">
-          Sui Object Explorer
+        <h1 className="text-3xl font-bold text-white mb-2 tracking-tight">
+          Sui Ecosystem Explorer
         </h1>
-        <p className="text-base text-gray-400 leading-relaxed mb-2">
-          Explore Sui blockchain protocols, packages, objects, and transactions.
-          Understand what any on-chain thing actually <em className="text-gray-300 not-italic font-medium">does</em>.
+        <p className="text-sm text-gray-400 leading-relaxed">
+          Every protocol, package, and object on Sui — curated, verified on-chain, and ranked by TVL.
         </p>
-        <p className="text-sm text-gray-500">
-          Select a protocol below, or use the search bar above to explore any object, transaction, or package directly.
-        </p>
+
+        <StatsBar stats={stats} loading={loading} />
+
+        {/* Badge legend */}
+        <div className="flex items-center justify-center gap-4 flex-wrap mt-1 mb-4">
+          {Object.entries(BADGE).map(([tier, { icon, label, className }]) => (
+            <span key={tier}
+              className={`text-[10px] font-semibold px-2.5 py-1 rounded-full border ${className}`}>
+              {icon} {label}
+            </span>
+          ))}
+        </div>
       </div>
     </div>
   )
 }
 
-export function Directory({ onSelectProtocol, onSearchPackage }: Props) {
+// ─── Main ────────────────────────────────────────────────────────────────────
+export function Directory({ onSelectProtocol, onSelectEntry }: Props) {
+  const { entries, loading, stats } = useDirectory()
   const [search, setSearch] = useState('')
-  const [activeCategory, setActiveCategory] = useState<ProtocolCategory | 'All'>('All')
+  const [tierFilter, setTierFilter] = useState<BadgeTier | 'all'>('all')
+  const [claimTarget, setClaimTarget] = useState<DirectoryEntry | null>(null)
 
   const filtered = useMemo(() => {
-    return PROTOCOLS.filter((p) => {
-      const matchesSearch =
-        !search ||
-        p.name.toLowerCase().includes(search.toLowerCase()) ||
-        p.tagline.toLowerCase().includes(search.toLowerCase()) ||
-        p.tags.some((t) => t.includes(search.toLowerCase()))
-      const matchesCategory = activeCategory === 'All' || p.category === activeCategory
-      return matchesSearch && matchesCategory
+    return entries.filter((e) => {
+      const matchesTier = tierFilter === 'all' || e.tier === tierFilter
+      const matchesSearch = !search
+        || e.name.toLowerCase().includes(search.toLowerCase())
+        || e.category.toLowerCase().includes(search.toLowerCase())
+        || e.tagline.toLowerCase().includes(search.toLowerCase())
+      return matchesTier && matchesSearch
     })
-  }, [search, activeCategory])
+  }, [entries, search, tierFilter])
 
-  const usedCategories = useMemo(() => {
-    const cats = new Set(PROTOCOLS.map((p) => p.category))
-    return CATEGORIES.filter((c) => cats.has(c))
-  }, [])
-
-  void onSearchPackage // referenced via props; kept for future use
+  const handleSelect = (entry: DirectoryEntry) => {
+    if (entry.official) {
+      onSelectProtocol(entry.official)
+    } else {
+      onSelectEntry(entry)
+    }
+  }
 
   return (
     <div className="flex-1 overflow-y-auto">
-      <HeroSection />
+      <HeroSection stats={stats} loading={loading} />
 
       {/* Filter bar */}
-      <div className="sticky top-0 z-10 bg-[#0d1117]/95 backdrop-blur border-b border-[#30363d] px-6 py-3">
+      <div className="sticky top-0 z-10 bg-[#0d1117]/95 backdrop-blur border-b
+        border-[#30363d] px-6 py-3">
         <div className="max-w-6xl mx-auto flex items-center gap-3 flex-wrap">
           {/* Search */}
           <div className="relative flex-1 min-w-48">
@@ -212,37 +266,30 @@ export function Directory({ onSelectProtocol, onSearchPackage }: Props) {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Filter protocols…"
+              placeholder="Search protocols…"
               className="w-full bg-[#161b22] border border-[#30363d] rounded-lg pl-9 pr-3 py-2
-                text-xs text-white placeholder-gray-500 focus:outline-none focus:border-[#6fbcf0] transition-colors"
+                text-xs text-white placeholder-gray-500 focus:outline-none
+                focus:border-[#6fbcf0] transition-colors"
             />
           </div>
 
-          {/* Category pills */}
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <button
-              onClick={() => setActiveCategory('All')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors
-                ${activeCategory === 'All'
-                  ? 'bg-[#6fbcf0] text-[#0d1117] font-semibold'
-                  : 'bg-[#161b22] text-gray-400 border border-[#30363d] hover:text-white'
-                }`}
-            >
-              All ({PROTOCOLS.length})
-            </button>
-            {usedCategories.map((cat) => {
-              const count = PROTOCOLS.filter((p) => p.category === cat).length
+          {/* Tier filter */}
+          <div className="flex items-center gap-1.5">
+            {TIER_FILTERS.map(({ id, label }) => {
+              const count = id === 'all'
+                ? entries.length
+                : entries.filter((e) => e.tier === id).length
               return (
                 <button
-                  key={cat}
-                  onClick={() => setActiveCategory(cat)}
+                  key={id}
+                  onClick={() => setTierFilter(id)}
                   className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors
-                    ${activeCategory === cat
+                    ${tierFilter === id
                       ? 'bg-[#6fbcf0] text-[#0d1117] font-semibold'
                       : 'bg-[#161b22] text-gray-400 border border-[#30363d] hover:text-white'
                     }`}
                 >
-                  {cat} ({count})
+                  {label} ({loading ? '…' : count})
                 </button>
               )
             })}
@@ -250,40 +297,61 @@ export function Directory({ onSelectProtocol, onSearchPackage }: Props) {
         </div>
       </div>
 
-      {/* Protocol grid */}
+      {/* Grid */}
       <div className="max-w-6xl mx-auto px-6 py-8">
-        {filtered.length === 0 ? (
+        {loading && entries.length === 0 ? (
+          <div className="flex items-center justify-center py-20">
+            <div className="flex flex-col items-center gap-4">
+              <div className="w-10 h-10 border-2 border-[#6fbcf0] border-t-transparent
+                rounded-full animate-spin" />
+              <span className="text-sm text-gray-400">Loading Sui ecosystem data…</span>
+            </div>
+          </div>
+        ) : filtered.length === 0 ? (
           <div className="text-center py-16 text-gray-500">
             <div className="text-3xl mb-3">🔍</div>
-            <p>No protocols match "{search}"</p>
+            <p>No protocols match your filters</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {filtered.map((protocol) => (
+            {filtered.map((entry) => (
               <ProtocolCard
-                key={protocol.id}
-                protocol={protocol}
-                onSelect={() => onSelectProtocol(protocol)}
+                key={entry.id}
+                entry={entry}
+                onSelect={() => handleSelect(entry)}
+                onClaim={() => setClaimTarget(entry)}
               />
             ))}
           </div>
         )}
 
         {/* Footer */}
-        <div className="mt-12 pt-8 border-t border-[#21262d] text-center">
+        <div className="mt-12 pt-8 border-t border-[#21262d] text-center space-y-2">
           <p className="text-xs text-gray-600">
-            Know a protocol that should be listed?{' '}
-            <a
-              href="https://github.com/dsearle/sui-explorer"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-[#6fbcf0] hover:underline"
-            >
-              Open a PR on GitHub
+            TVL data from{' '}
+            <a href="https://defillama.com" target="_blank" rel="noopener noreferrer"
+              className="text-[#6fbcf0] hover:underline">DeFiLlama</a>
+            {' · '}
+            Protocol data from Sui mainnet RPC
+          </p>
+          <p className="text-xs text-gray-600">
+            Missing a protocol?{' '}
+            <a href="https://github.com/dsearle/sui-explorer/issues/new?title=[Protocol+Claim]&labels=protocol-claim"
+              target="_blank" rel="noopener noreferrer"
+              className="text-[#6fbcf0] hover:underline">
+              Open a claim on GitHub
             </a>
           </p>
         </div>
       </div>
+
+      {/* Claim modal */}
+      {claimTarget && (
+        <ClaimModal
+          entry={claimTarget}
+          onClose={() => setClaimTarget(null)}
+        />
+      )}
     </div>
   )
 }
