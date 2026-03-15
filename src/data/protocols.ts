@@ -85,7 +85,8 @@ export const PROTOCOLS: Protocol[] = [
       { id: '0xca5a5a62f01c79a104bf4d31669e29daa387f325c241de4edbe30986a9bc8b0d', label: 'coin_decimals_registry', description: 'On-chain decimal precision registry for supported assets' },
     ],
     keyObjects: [
-      { id: '0xa757975255146dc9686aa823b7838b507f315d704f428cbadad2f4ea061ab349', label: 'Market', description: 'Central market state — all lending pools, rates, reserves' },
+      { id: '0xa757975255146dc9686aa823b7838b507f315d704f428cbadad2f4ea061939d9', label: 'Market', description: 'Central market state — all lending pools, rates, reserves' },
+      { id: '0x07871c4b3c847a0f674510d4978d5cf6f960452795e8ff6f189fd2088a3f6ac7', label: 'Version', description: 'Protocol version object' },
     ],
     tags: ['lending', 'borrowing', 'collateral', 'liquidation', 'defi'],
     featured: true,
