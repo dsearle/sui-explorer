@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { PROTOCOLS, type Protocol } from '../data/protocols'
 import { useDeFiLlama, type DeFiLlamaProtocol } from './useDeFiLlama'
+import { useOnChainMetrics, type ProtocolMetrics } from './useOnChainMetrics'
 
 export type BadgeTier = 'official' | 'verified' | 'unclaimed'
 
@@ -10,6 +11,8 @@ export interface DirectoryEntry {
   official?: Protocol
   // DeFiLlama data (all tiers may have this)
   llama?: DeFiLlamaProtocol
+  // On-chain metrics (official only)
+  onChain?: ProtocolMetrics
   // Derived display fields
   id: string
   name: string
@@ -22,6 +25,8 @@ export interface DirectoryEntry {
   tvlUsd: string
   tvl: number | null
   logo?: string
+  // Composite popularity score (0–100)
+  popularityScore: number
 }
 
 /** Normalise name for fuzzy matching between our list and DeFiLlama */
@@ -52,6 +57,7 @@ function styleForCategory(cat: string) {
 
 export function useDirectory() {
   const { protocols: llamaProtocols, loading: llamaLoading, error: llamaError } = useDeFiLlama()
+  const { metrics: onChainMetrics, loading: metricsLoading } = useOnChainMetrics()
   const [entries, setEntries] = useState<DirectoryEntry[]>([])
 
   useEffect(() => {
@@ -64,17 +70,29 @@ export function useDirectory() {
     const result: DirectoryEntry[] = []
     const usedLlamaIds = new Set<string>()
 
-    // 1. Official entries — try to match with DeFiLlama for TVL enrichment
+    // --- Max TVL across all protocols (for normalising score) ---
+    const maxTvl = Math.max(...llamaProtocols.map((p) => p.tvl ?? 0), 1)
+
+    // 1. Official entries — enriched with DeFiLlama TVL + on-chain metrics
     for (const protocol of PROTOCOLS) {
       const llamaMatch = llamaByName.get(normalise(protocol.name))
         ?? llamaByName.get(normalise(protocol.name.replace(/\s+protocol$/i, '')))
 
       if (llamaMatch) usedLlamaIds.add(llamaMatch.id)
 
+      const onChain = onChainMetrics.get(protocol.id)
+      const tvl = llamaMatch?.tvl ?? 0
+
+      // Composite score: 60% TVL rank + 40% on-chain activity
+      const tvlScore = (tvl / maxTvl) * 60
+      const activityScore = (onChain?.popularityScore ?? 0) * 0.4
+      const popularityScore = Math.round(tvlScore + activityScore)
+
       result.push({
         tier: 'official',
         official: protocol,
         llama: llamaMatch,
+        onChain,
         id: protocol.id,
         name: protocol.name,
         tagline: protocol.tagline,
@@ -86,17 +104,18 @@ export function useDirectory() {
         tvlUsd: llamaMatch?.tvlUsd ?? '—',
         tvl: llamaMatch?.tvl ?? null,
         logo: llamaMatch?.logo,
+        popularityScore,
       })
     }
 
-    // 2. DeFiLlama-discovered protocols not in our official list
-    //    These start as 'unclaimed' — the user can claim them
+    // 2. DeFiLlama-discovered unclaimed protocols
     if (llamaProtocols.length > 0) {
       for (const lp of llamaProtocols) {
-        if (usedLlamaIds.has(lp.id)) continue // already matched
-        if (!lp.tvl || lp.tvl < 10_000) continue // skip dust protocols
+        if (usedLlamaIds.has(lp.id)) continue
+        if (!lp.tvl || lp.tvl < 10_000) continue
 
         const style = styleForCategory(lp.category)
+        const popularityScore = Math.round(((lp.tvl ?? 0) / maxTvl) * 60)
 
         result.push({
           tier: 'unclaimed',
@@ -112,19 +131,20 @@ export function useDirectory() {
           tvlUsd: lp.tvlUsd,
           tvl: lp.tvl,
           logo: lp.logo,
+          popularityScore,
         })
       }
     }
 
-    // Sort: official first, then by TVL desc
+    // Sort: official first, then popularity score desc
     result.sort((a, b) => {
       if (a.tier === 'official' && b.tier !== 'official') return -1
       if (b.tier === 'official' && a.tier !== 'official') return 1
-      return (b.tvl ?? 0) - (a.tvl ?? 0)
+      return b.popularityScore - a.popularityScore
     })
 
     setEntries(result)
-  }, [llamaProtocols])
+  }, [llamaProtocols, onChainMetrics])
 
   const stats = useMemo(() => ({
     total: entries.length,
@@ -134,5 +154,5 @@ export function useDirectory() {
     totalTvl: entries.reduce((sum, e) => sum + (e.tvl ?? 0), 0),
   }), [entries])
 
-  return { entries, loading: llamaLoading, error: llamaError, stats }
+  return { entries, loading: llamaLoading || metricsLoading, error: llamaError, stats }
 }

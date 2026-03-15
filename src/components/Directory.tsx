@@ -101,13 +101,30 @@ function ProtocolCard({
           {entry.tagline}
         </p>
 
-        {/* TVL */}
-        {entry.tvlUsd && entry.tvlUsd !== '—' && (
-          <div className="flex items-center gap-1.5 mb-3">
-            <span className="text-[10px] text-gray-600 uppercase tracking-wider">TVL</span>
-            <span className="text-sm font-bold text-[#34d399]">{entry.tvlUsd}</span>
-          </div>
-        )}
+        {/* Stats row: TVL + activity */}
+        <div className="flex items-center gap-3 mb-3 flex-wrap">
+          {entry.tvlUsd && entry.tvlUsd !== '—' && (
+            <div className="flex items-center gap-1">
+              <span className="text-[10px] text-gray-600 uppercase tracking-wider">TVL</span>
+              <span className="text-xs font-bold text-[#34d399]">{entry.tvlUsd}</span>
+            </div>
+          )}
+          {entry.onChain && entry.onChain.activityTier !== 'unknown' && (
+            <div className="flex items-center gap-1">
+              <span className="text-[10px] font-semibold"
+                style={{ color: entry.onChain.activityColor }}>
+                {entry.onChain.activityLabel}
+              </span>
+            </div>
+          )}
+          {entry.onChain?.topObject && (
+            <div className="flex items-center gap-1 ml-auto">
+              <span className="text-[10px] text-gray-600">
+                {entry.onChain.topObject.version.toLocaleString()} txs
+              </span>
+            </div>
+          )}
+        </div>
 
         {/* Action row */}
         <div className="pt-2.5 border-t border-[#21262d] flex items-center justify-between">
@@ -226,10 +243,11 @@ export function Directory({ onSelectProtocol, onSelectEntry }: Props) {
   const { entries, loading, stats } = useDirectory()
   const [search, setSearch] = useState('')
   const [tierFilter, setTierFilter] = useState<BadgeTier | 'all'>('all')
+  const [sortBy, setSortBy] = useState<'popularity' | 'tvl' | 'activity' | 'name'>('popularity')
   const [claimTarget, setClaimTarget] = useState<DirectoryEntry | null>(null)
 
   const filtered = useMemo(() => {
-    return entries.filter((e) => {
+    const base = entries.filter((e) => {
       const matchesTier = tierFilter === 'all' || e.tier === tierFilter
       const matchesSearch = !search
         || e.name.toLowerCase().includes(search.toLowerCase())
@@ -237,7 +255,22 @@ export function Directory({ onSelectProtocol, onSelectEntry }: Props) {
         || e.tagline.toLowerCase().includes(search.toLowerCase())
       return matchesTier && matchesSearch
     })
-  }, [entries, search, tierFilter])
+
+    return [...base].sort((a, b) => {
+      // Always pin official above unclaimed unless sorting by name
+      if (sortBy !== 'name') {
+        if (a.tier === 'official' && b.tier !== 'official') return -1
+        if (b.tier === 'official' && a.tier !== 'official') return 1
+      }
+      switch (sortBy) {
+        case 'tvl':        return (b.tvl ?? 0) - (a.tvl ?? 0)
+        case 'activity':   return (b.onChain?.totalMutations ?? 0) - (a.onChain?.totalMutations ?? 0)
+        case 'name':       return a.name.localeCompare(b.name)
+        case 'popularity':
+        default:           return b.popularityScore - a.popularityScore
+      }
+    })
+  }, [entries, search, tierFilter, sortBy])
 
   const handleSelect = (entry: DirectoryEntry) => {
     if (entry.official) {
@@ -271,6 +304,29 @@ export function Directory({ onSelectProtocol, onSelectEntry }: Props) {
                 text-xs text-white placeholder-gray-500 focus:outline-none
                 focus:border-[#6fbcf0] transition-colors"
             />
+          </div>
+
+          {/* Sort */}
+          <div className="flex items-center gap-1 bg-[#161b22] border border-[#30363d]
+            rounded-lg p-0.5">
+            {([
+              { id: 'popularity', label: '🏆 Popular' },
+              { id: 'tvl',        label: '💰 TVL' },
+              { id: 'activity',   label: '⚡ Activity' },
+              { id: 'name',       label: 'A–Z' },
+            ] as const).map(({ id, label }) => (
+              <button
+                key={id}
+                onClick={() => setSortBy(id)}
+                className={`px-2.5 py-1.5 rounded-md text-[10px] font-medium transition-all
+                  ${sortBy === id
+                    ? 'bg-[#6fbcf0] text-[#0d1117] font-semibold'
+                    : 'text-gray-400 hover:text-white'
+                  }`}
+              >
+                {label}
+              </button>
+            ))}
           </div>
 
           {/* Tier filter */}
