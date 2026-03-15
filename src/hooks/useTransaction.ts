@@ -1,0 +1,50 @@
+import { useState, useCallback } from 'react'
+import type { SuiTransactionBlockResponse } from '@mysten/sui/jsonRpc'
+import { getClient, type Network } from '../lib/suiClient'
+
+export interface TransactionState {
+  loading: boolean
+  error: string | null
+  data: SuiTransactionBlockResponse | null
+}
+
+export function useTransaction(network: Network) {
+  const [state, setState] = useState<TransactionState>({
+    loading: false,
+    error: null,
+    data: null,
+  })
+
+  const fetchTransaction = useCallback(
+    async (digest: string) => {
+      const trimmed = digest.trim()
+      if (!trimmed) return
+
+      setState({ loading: true, error: null, data: null })
+
+      try {
+        const client = getClient(network)
+        const data = await client.getTransactionBlock({
+          digest: trimmed,
+          options: {
+            showInput: true,
+            showEffects: true,
+            showEvents: true,
+            showObjectChanges: true,
+            showBalanceChanges: true,
+          },
+        })
+        setState({ loading: false, error: null, data })
+      } catch (err) {
+        setState({
+          loading: false,
+          error: err instanceof Error ? err.message : 'Transaction not found',
+          data: null,
+        })
+      }
+    },
+    [network]
+  )
+
+  return { ...state, fetchTransaction }
+}
