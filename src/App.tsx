@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
+import { useState, useCallback, useEffect, useMemo } from 'react'
 import { ReactFlowProvider } from '@xyflow/react'
 import { SearchBar } from './components/SearchBar'
 import { NetworkSelector } from './components/NetworkSelector'
@@ -13,9 +13,10 @@ import { useTransaction } from './hooks/useTransaction'
 import { usePackage } from './hooks/usePackage'
 import { analyzePackage, type PackageAnalysis } from './lib/packageAnalyzer'
 import type { Protocol } from './data/protocols'
+import { PROTOCOLS } from './data/protocols'
 import type { Network } from './lib/suiClient'
 
-type Mode = 'directory' | 'protocol' | 'object' | 'transaction' | 'package'
+ type Mode = 'directory' | 'protocol' | 'object' | 'transaction' | 'package'
 
 const SEARCH_MODES = ['object', 'transaction', 'package'] as const
 type SearchMode = typeof SEARCH_MODES[number]
@@ -39,6 +40,15 @@ const MODE_META: Record<SearchMode, { icon: string; label: string; placeholder: 
     placeholder: 'Enter a package ID (e.g. 0x2)',
     example: { label: 'Try 0x2', value: '0x2' },
   },
+}
+
+ type ViewState = {
+  mode: Mode
+  objectId?: string
+  txDigest?: string
+  packageId?: string
+  protocolId?: string
+  searchMode?: SearchMode
 }
 
 function getInitialState(): { searchMode: SearchMode; query: string; network: Network } {
@@ -70,10 +80,17 @@ export default function App() {
   const [panelOpen, setPanelOpen] = useState(false)
   const [selectedProtocol, setSelectedProtocol] = useState<Protocol | null>(null)
   const [analysis, setAnalysis] = useState<PackageAnalysis | null>(null)
+  const [historyStack, setHistoryStack] = useState<ViewState[]>([])
 
   const objectGraph = useObjectGraph(network)
   const transaction = useTransaction(network)
   const pkg = usePackage(network)
+
+  const protocolMap = useMemo(() => {
+    const map = new Map<string, Protocol>()
+    PROTOCOLS.forEach((p) => map.set(p.id, p))
+    return map
+  }, [])
 
   // Derive analysis when package modules load
   useEffect(() => {
@@ -84,88 +101,165 @@ export default function App() {
     }
   }, [pkg.modules])
 
-  const handleNodeClickRef = useRef<(id: string) => void>(() => {})
+  const getCurrentState = useCallback((): ViewState => {
+    switch (mode) {
+      case 'object':
+        return {
+          mode: 'object',
+          objectId: objectGraph.currentId || objectGraph.objectData?.data?.objectId,
+          searchMode,
+        }
+      case 'transaction':
+        return { mode: 'transaction', txDigest: transaction.currentDigest, searchMode }
+      case 'package':
+        return { mode: 'package', packageId: pkg.packageId, searchMode }
+      case 'protocol':
+        return { mode: 'protocol', protocolId: selectedProtocol?.id }
+      default:
+        return { mode: 'directory' }
+    }
+  }, [mode, objectGraph.currentId, objectGraph.objectData, transaction.currentDigest, pkg.packageId, selectedProtocol, searchMode])
+
+  const pushCurrentState = useCallback(() => {
+    setHistoryStack((prev) => [...prev, getCurrentState()])
+  }, [getCurrentState])
+
+  const navigate = useCallback((nextMode: Mode, action: () => void, options?: { pushHistory?: boolean }) => {
+    if (options?.pushHistory !== false) pushCurrentState()
+    setMode(nextMode)
+    action()
+  }, [pushCurrentState])
+
+  const openTransaction = useCallback((digest: string, options?: { pushHistory?: boolean }) => {
+    navigate('transaction', () => {
+      setSearchMode('transaction')
+      transaction.fetchTransaction(digest)
+      updateUrl('transaction', digest, network)
+    }, options)
+  }, [navigate, transaction, network])
 
   const handleTxClick = useCallback((digest: string) => {
-    setSearchMode('transaction')
-    setMode('transaction')
-    transaction.fetchTransaction(digest)
-    updateUrl('transaction', digest, network)
-  }, [network, transaction])
+    openTransaction(digest)
+  }, [openTransaction])
 
-  const handleTxClickRef = useRef(handleTxClick)
-  handleTxClickRef.current = handleTxClick
+  const openObject = useCallback((objectId: string, options?: { pushHistory?: boolean }) => {
+    navigate('object', () => {
+      setSearchMode('object')
+      objectGraph.fetchObject(objectId, (nextId) => openObject(nextId), handleTxClick)
+      setPanelOpen(true)
+      updateUrl('object', objectId, network)
+    }, options)
+  }, [navigate, objectGraph, handleTxClick, network])
 
-  const handleNodeClick = useCallback((id: string) => {
-    setMode('object')
-    objectGraph.fetchObject(id, handleNodeClickRef.current, handleTxClickRef.current)
-    setPanelOpen(true)
-    updateUrl('object', id, network)
-  }, [network, objectGraph])  // eslint-disable-line react-hooks/exhaustive-deps
+  const openPackage = useCallback((packageId: string, options?: { pushHistory?: boolean }) => {
+    navigate('package', () => {
+      setSearchMode('package')
+      pkg.fetchPackage(packageId)
+      updateUrl('package', packageId, network)
+    }, options)
+  }, [navigate, pkg, network])
 
-  handleNodeClickRef.current = handleNodeClick
+  const openProtocol = useCallback((protocol: Protocol, options?: { pushHistory?: boolean }) => {
+    navigate('protocol', () => {
+      setSelectedProtocol(protocol)
+      setAnalysis(null)
+      updateUrl('protocol', '', network)
+    }, options)
+  }, [navigate, network])
+
+  const openDirectory = useCallback((options?: { pushHistory?: boolean }) => {
+    navigate('directory', () => {
+      setSelectedProtocol(null)
+      setAnalysis(null)
+      updateUrl('directory', '', network)
+    }, options)
+  }, [navigate, network])
+
+  const restoreView = useCallback((state: ViewState) => {
+    switch (state.mode) {
+      case 'object':
+        if (state.objectId) openObject(state.objectId, { pushHistory: false })
+        else openDirectory({ pushHistory: false })
+        break
+      case 'transaction':
+        if (state.txDigest) openTransaction(state.txDigest, { pushHistory: false })
+        else openDirectory({ pushHistory: false })
+        break
+      case 'package':
+        if (state.packageId) openPackage(state.packageId, { pushHistory: false })
+        else openDirectory({ pushHistory: false })
+        break
+      case 'protocol':
+        if (state.protocolId) {
+          const proto = protocolMap.get(state.protocolId)
+          if (proto) openProtocol(proto, { pushHistory: false })
+          else openDirectory({ pushHistory: false })
+        } else {
+          openDirectory({ pushHistory: false })
+        }
+        break
+      default:
+        openDirectory({ pushHistory: false })
+    }
+  }, [openDirectory, openObject, openTransaction, openPackage, openProtocol, protocolMap])
+
+  const handleBack = useCallback(() => {
+    setHistoryStack((prev) => {
+      if (prev.length === 0) return prev
+      const next = prev.slice(0, -1)
+      const target = prev[prev.length - 1]
+      restoreView(target)
+      return next
+    })
+  }, [restoreView])
+
+  const canGoBack = historyStack.length > 0
 
   // Load from URL params on mount
   useEffect(() => {
     if (initial.query) {
       const m = initial.searchMode
-      if (m === 'object') objectGraph.fetchObject(initial.query, handleNodeClick, handleTxClick)
-      if (m === 'transaction') transaction.fetchTransaction(initial.query)
-      if (m === 'package') pkg.fetchPackage(initial.query)
+      if (m === 'object') openObject(initial.query, { pushHistory: false })
+      if (m === 'transaction') openTransaction(initial.query, { pushHistory: false })
+      if (m === 'package') openPackage(initial.query, { pushHistory: false })
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const handleSearch = useCallback((id: string) => {
-    setMode(searchMode)
     if (searchMode === 'object') {
-      objectGraph.fetchObject(id, handleNodeClick, handleTxClick)
+      openObject(id)
       setPanelOpen(true)
     } else if (searchMode === 'transaction') {
-      transaction.fetchTransaction(id)
+      openTransaction(id)
     } else {
-      pkg.fetchPackage(id)
+      openPackage(id)
     }
-    updateUrl(searchMode, id, network)
-  }, [searchMode, network, objectGraph, transaction, pkg, handleNodeClick])
+  }, [searchMode, openObject, openTransaction, openPackage])
 
   const handleNetworkChange = useCallback((n: Network) => {
     setNetwork(n)
   }, [])
 
   const handleSelectProtocol = useCallback((protocol: Protocol) => {
-    setSelectedProtocol(protocol)
-    setMode('protocol')
-    setAnalysis(null)
-    updateUrl('protocol', '', network)
-  }, [network])
+    openProtocol(protocol)
+  }, [openProtocol])
 
   const handleExplorePackage = useCallback((packageId: string) => {
-    setSearchMode('package')
-    setMode('package')
-    pkg.fetchPackage(packageId)
-    updateUrl('package', packageId, network)
-  }, [network, pkg])
+    openPackage(packageId)
+  }, [openPackage])
 
   const handleExploreObject = useCallback((objectId: string) => {
-    setSearchMode('object')
-    setMode('object')
-    objectGraph.fetchObject(objectId, handleNodeClick)
-    setPanelOpen(true)
-    updateUrl('object', objectId, network)
-  }, [network, objectGraph, handleNodeClick])
+    openObject(objectId)
+  }, [openObject])
 
   const handleProtocolLoadPackage = useCallback((packageId: string) => {
     pkg.fetchPackage(packageId)
   }, [pkg])
 
   const handleObjectFromTx = useCallback((id: string) => {
-    setSearchMode('object')
-    setMode('object')
-    objectGraph.fetchObject(id, handleNodeClick)
-    setPanelOpen(true)
-    updateUrl('object', id, network)
-  }, [network, objectGraph, handleNodeClick])
+    openObject(id)
+  }, [openObject])
 
   const currentLoading = useMemo(() => {
     if (searchMode === 'object') return objectGraph.loading
@@ -175,13 +269,35 @@ export default function App() {
 
   const showSearchBar = mode !== 'directory' && mode !== 'protocol'
 
+  const handleHomeClick = useCallback(() => {
+    setHistoryStack([])
+    setSelectedProtocol(null)
+    setMode('directory')
+    setAnalysis(null)
+    updateUrl('directory', '', network)
+  }, [network])
+
   return (
     <div className="h-screen w-screen flex flex-col bg-[#0d1117] overflow-hidden">
       {/* Top bar */}
       <header className="flex items-center gap-3 px-4 py-2.5 border-b border-[#30363d] bg-[#0d1117] z-10 flex-shrink-0">
+        {/* Back button */}
+        {canGoBack && (
+          <button
+            onClick={handleBack}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-[#30363d]
+              text-xs text-gray-300 hover:text-white hover:border-[#6fbcf0] transition-colors"
+          >
+            <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M15 6l-6 6 6 6" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            Back
+          </button>
+        )}
+
         {/* Logo — always clickable to go home */}
         <button
-          onClick={() => { setMode('directory'); updateUrl('directory', '', network) }}
+          onClick={handleHomeClick}
           className="flex items-center gap-2 flex-shrink-0 group"
         >
           <div className="w-7 h-7 rounded-lg bg-[#6fbcf0] flex items-center justify-center
@@ -217,7 +333,10 @@ export default function App() {
             {SEARCH_MODES.map((m) => (
               <button
                 key={m}
-                onClick={() => { setSearchMode(m); const current = mode as string; if (current !== 'directory' && current !== 'protocol') setMode(m) }}
+                onClick={() => {
+                  setSearchMode(m)
+                  setMode(m as Mode)
+                }}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all
                   ${searchMode === m
                     ? 'bg-[#6fbcf0] text-[#0d1117] font-semibold'
@@ -271,8 +390,11 @@ export default function App() {
           <Directory
             onSelectProtocol={handleSelectProtocol}
             onSelectEntry={(entry) => {
-              // Unclaimed entries — open their website or just show a toast
-              if (entry.website) window.open(entry.website, '_blank', 'noopener,noreferrer')
+              if (entry.official) {
+                handleSelectProtocol(entry.official)
+              } else if (entry.website) {
+                window.open(entry.website, '_blank', 'noopener,noreferrer')
+              }
             }}
           />
         )}
@@ -282,7 +404,7 @@ export default function App() {
             protocol={selectedProtocol}
             packageState={pkg}
             analysis={analysis}
-            onBack={() => { setMode('directory'); updateUrl('directory', '', network) }}
+            onBack={handleBack}
             onExplorePackage={handleExplorePackage}
             onExploreObject={handleExploreObject}
             onLoadPackage={handleProtocolLoadPackage}
