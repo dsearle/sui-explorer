@@ -63,3 +63,70 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: #6fbcf0;
 }
+
+/* Blockstream Skyline */
+@keyframes skylinePulse {
+  0% { transform: translateY(4px) scaleY(0.95); opacity: 0.7; }
+  50% { transform: translateY(0) scaleY(1); opacity: 1; }
+  100% { transform: translateY(4px) scaleY(0.95); opacity: 0.7; }
+}
+
+@keyframes skylineGlow {
+  0% { box-shadow: 0 0 12px rgba(111, 188, 240, 0.2); }
+  50% { box-shadow: 0 0 18px rgba(111, 188, 240, 0.35); }
+  100% { box-shadow: 0 0 12px rgba(111, 188, 240, 0.2); }
+}
+
+@keyframes skylineTrail {
+  0% { opacity: 0; transform: translateX(-10%); }
+  20% { opacity: 0.4; }
+  100% { opacity: 0; transform: translateX(120%); }
+}
+
+.blockstream-hero {
+  background: radial-gradient(circle at top, rgba(111, 188, 240, 0.15), transparent 55%),
+    linear-gradient(135deg, rgba(15, 23, 42, 0.95), rgba(2, 6, 23, 0.95));
+  border: 1px solid rgba(111, 188, 240, 0.2);
+  box-shadow: 0 20px 60px rgba(2, 6, 23, 0.6);
+  border-radius: 24px;
+}
+
+.skyline-track {
+  display: flex;
+  gap: 1rem;
+  overflow: hidden;
+  position: relative;
+}
+
+.skyline-card {
+  position: relative;
+  min-width: 160px;
+  border-radius: 18px;
+  padding: 0.9rem;
+  background: linear-gradient(160deg, rgba(111, 188, 240, 0.2), rgba(56, 189, 248, 0.1));
+  border: 1px solid rgba(111, 188, 240, 0.3);
+  animation: skylinePulse 6s ease-in-out infinite;
+  overflow: hidden;
+}
+
+.skyline-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  animation: skylineGlow 6s ease-in-out infinite;
+  z-index: 0;
+}
+
+.skyline-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+.skyline-trail {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(111, 188, 240, 0.15), transparent);
+  animation: skylineTrail 3s linear infinite;
+}

@@ -8,6 +8,7 @@ import { TransactionInspector } from './components/TransactionInspector'
 import { PackageViewer } from './components/PackageViewer'
 import { Directory } from './components/Directory'
 import { ProtocolDetail } from './components/ProtocolDetail'
+import { ChainHero } from './components/ChainHero'
 import { useObjectGraph } from './hooks/useObjectGraph'
 import { useTransaction } from './hooks/useTransaction'
 import { usePackage } from './hooks/usePackage'
@@ -387,16 +388,19 @@ export default function App() {
       {/* Main content */}
       <main className="flex-1 flex overflow-hidden">
         {mode === 'directory' && (
-          <Directory
-            onSelectProtocol={handleSelectProtocol}
-            onSelectEntry={(entry) => {
-              if (entry.official) {
-                handleSelectProtocol(entry.official)
-              } else if (entry.website) {
-                window.open(entry.website, '_blank', 'noopener,noreferrer')
-              }
-            }}
-          />
+          <div className="flex-1 flex flex-col overflow-hidden">
+            <ChainHero network={network} />
+            <Directory
+              onSelectProtocol={handleSelectProtocol}
+              onSelectEntry={(entry) => {
+                if (entry.official) {
+                  handleSelectProtocol(entry.official)
+                } else if (entry.website) {
+                  window.open(entry.website, '_blank', 'noopener,noreferrer')
+                }
+              }}
+            />
+          </div>
         )}
 
         {mode === 'protocol' && selectedProtocol && (
