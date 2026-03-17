@@ -6,6 +6,9 @@ export interface LiveBlock {
   sequence: string
   timestamp: number
   txCount: number
+  epoch: string
+  transactions: string[]
+  networkTotalTransactions: number
 }
 
 interface LiveChainState {
@@ -44,6 +47,9 @@ export function useLiveChain(network: Network): LiveChainState {
             sequence: latestSeq,
             timestamp: Number(checkpoint.timestampMs ?? Date.now()),
             txCount: checkpoint.transactions?.length ?? 0,
+            epoch: checkpoint.epoch?.toString() ?? '0',
+            transactions: checkpoint.transactions ?? [],
+            networkTotalTransactions: Number(checkpoint.networkTotalTransactions ?? 0),
           }
 
           setState((prev) => ({

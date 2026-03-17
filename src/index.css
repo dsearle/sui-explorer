@@ -94,19 +94,23 @@ body {
 .skyline-track {
   display: flex;
   gap: 1rem;
-  overflow: hidden;
+  overflow-x: auto;
   position: relative;
+  padding-bottom: 0.5rem;
+  scroll-snap-type: x mandatory;
 }
 
 .skyline-card {
   position: relative;
-  min-width: 160px;
+  min-width: 170px;
   border-radius: 18px;
   padding: 0.9rem;
   background: linear-gradient(160deg, rgba(111, 188, 240, 0.2), rgba(56, 189, 248, 0.1));
   border: 1px solid rgba(111, 188, 240, 0.3);
   animation: skylinePulse 6s ease-in-out infinite;
   overflow: hidden;
+  scroll-snap-align: start;
+  cursor: pointer;
 }
 
 .skyline-card::after {

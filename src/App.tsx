@@ -17,7 +17,7 @@ import type { Protocol } from './data/protocols'
 import { PROTOCOLS } from './data/protocols'
 import type { Network } from './lib/suiClient'
 
- type Mode = 'directory' | 'protocol' | 'object' | 'transaction' | 'package'
+ type Mode = 'home' | 'directory' | 'protocol' | 'object' | 'transaction' | 'package'
 
 const SEARCH_MODES = ['object', 'transaction', 'package'] as const
 type SearchMode = typeof SEARCH_MODES[number]
@@ -67,7 +67,7 @@ function getInitialState(): { searchMode: SearchMode; query: string; network: Ne
 
 function updateUrl(mode: Mode, q: string, net: Network) {
   const params = new URLSearchParams()
-  if (mode !== 'directory' && mode !== 'protocol') params.set('mode', mode)
+  if (!['directory', 'protocol', 'home'].includes(mode)) params.set('mode', mode)
   if (q) params.set('q', q)
   if (net !== 'mainnet') params.set('network', net)
   window.history.replaceState({}, '', params.toString() ? `?${params.toString()}` : '/')
@@ -75,7 +75,8 @@ function updateUrl(mode: Mode, q: string, net: Network) {
 
 export default function App() {
   const initial = getInitialState()
-  const [mode, setMode] = useState<Mode>(initial.query ? (initial.searchMode as Mode) : 'directory')
+  const defaultMode: Mode = initial.query ? (initial.searchMode as Mode) : 'home'
+  const [mode, setMode] = useState<Mode>(defaultMode)
   const [searchMode, setSearchMode] = useState<SearchMode>(initial.searchMode)
   const [network, setNetwork] = useState<Network>(initial.network)
   const [panelOpen, setPanelOpen] = useState(false)
@@ -268,14 +269,52 @@ export default function App() {
     return pkg.loading
   }, [searchMode, objectGraph.loading, transaction.loading, pkg.loading])
 
-  const showSearchBar = mode !== 'directory' && mode !== 'protocol'
+  const showSearchBar = !['home', 'directory', 'protocol'].includes(mode)
+
+  type NavKey = 'home' | 'directory' | 'transactions' | 'packages'
+  const navItems: { key: NavKey; label: string }[] = [
+    { key: 'home', label: 'Home' },
+    { key: 'directory', label: 'Directory' },
+    { key: 'transactions', label: 'Transactions' },
+    { key: 'packages', label: 'Packages' },
+  ]
+
+  const activeNav = useMemo<NavKey>(() => {
+    if (mode === 'home') return 'home'
+    if (mode === 'directory' || mode === 'protocol') return 'directory'
+    if (mode === 'package') return 'packages'
+    return 'transactions'
+  }, [mode])
+
+  const handleNavClick = useCallback((target: NavKey) => {
+    switch (target) {
+      case 'home':
+        setMode('home')
+        updateUrl('home', '', network)
+        break
+      case 'directory':
+        setMode('directory')
+        updateUrl('directory', '', network)
+        break
+      case 'transactions':
+        setSearchMode('transaction')
+        setMode('transaction')
+        updateUrl('transaction', '', network)
+        break
+      case 'packages':
+        setSearchMode('package')
+        setMode('package')
+        updateUrl('package', '', network)
+        break
+    }
+  }, [network, setMode, setSearchMode])
 
   const handleHomeClick = useCallback(() => {
     setHistoryStack([])
     setSelectedProtocol(null)
-    setMode('directory')
+    setMode('home')
     setAnalysis(null)
-    updateUrl('directory', '', network)
+    updateUrl('home', '', network)
   }, [network])
 
   return (
@@ -385,22 +424,59 @@ export default function App() {
         )}
       </header>
 
+      <div className="border-b border-[#1f2937] bg-[#0b1220] px-4">
+        <nav className="flex items-center gap-2 py-2 overflow-x-auto">
+          {navItems.map((item) => (
+            <button
+              key={item.key}
+              onClick={() => handleNavClick(item.key)}
+              className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors whitespace-nowrap
+                ${activeNav === item.key
+                  ? 'bg-[#6fbcf0] text-[#0d1117]'
+                  : 'text-gray-400 hover:text-white border border-transparent hover:border-[#30363d]'
+                }`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </nav>
+      </div>
+
       {/* Main content */}
       <main className="flex-1 flex overflow-hidden">
-        {mode === 'directory' && (
-          <div className="flex-1 flex flex-col overflow-hidden">
+        {mode === 'home' && (
+          <div className="flex-1 overflow-y-auto px-4 py-6 space-y-6">
             <ChainHero network={network} />
-            <Directory
-              onSelectProtocol={handleSelectProtocol}
-              onSelectEntry={(entry) => {
-                if (entry.official) {
-                  handleSelectProtocol(entry.official)
-                } else if (entry.website) {
-                  window.open(entry.website, '_blank', 'noopener,noreferrer')
-                }
-              }}
-            />
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <article className="bg-[#0b1220] border border-[#1f2937] rounded-2xl p-5">
+                <p className="text-xs uppercase tracking-[0.3em] text-gray-500">Coming Soon</p>
+                <h3 className="text-white text-xl font-semibold mt-1">Finality Rings</h3>
+                <p className="text-sm text-gray-400 mt-2">
+                  Orbit-style visualization that maps finality latency and consensus health in real time.
+                </p>
+              </article>
+              <article className="bg-[#0b1220] border border-[#1f2937] rounded-2xl p-5">
+                <p className="text-xs uppercase tracking-[0.3em] text-gray-500">Coming Soon</p>
+                <h3 className="text-white text-xl font-semibold mt-1">Chain Terrain</h3>
+                <p className="text-sm text-gray-400 mt-2">
+                  Package “topography” driven by live activity so hotspots ripple across a 3D landscape.
+                </p>
+              </article>
+            </div>
           </div>
+        )}
+
+        {mode === 'directory' && (
+          <Directory
+            onSelectProtocol={handleSelectProtocol}
+            onSelectEntry={(entry) => {
+              if (entry.official) {
+                handleSelectProtocol(entry.official)
+              } else if (entry.website) {
+                window.open(entry.website, '_blank', 'noopener,noreferrer')
+              }
+            }}
+          />
         )}
 
         {mode === 'protocol' && selectedProtocol && (
