@@ -1,4 +1,6 @@
 import type { SuiObjectResponse } from '@mysten/sui/jsonRpc'
+import { IdLink } from './IdLink'
+import { useNavigation } from '../lib/NavigationContext'
 
 interface Props {
   data: SuiObjectResponse | null
@@ -15,36 +17,38 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
   )
 }
 
-function CopyButton({ text }: { text: string }) {
-  const copy = () => navigator.clipboard.writeText(text)
-  return (
-    <button
-      onClick={copy}
-      className="text-[10px] px-2 py-0.5 bg-[#21262d] text-gray-400 rounded hover:text-white
-        hover:bg-[#30363d] transition-colors ml-2"
-    >
-      copy
-    </button>
-  )
-}
+export function ObjectPanel({ data, onClose }: Props) {
+  const nav = useNavigation()
 
-export function ObjectPanel({ data, onClose, onTxClick }: Props) {
   if (!data?.data) return null
 
   const obj = data.data
   const content = obj.content
 
-  const ownerStr = obj.owner
-    ? typeof obj.owner === 'string'
-      ? obj.owner
-      : 'AddressOwner' in (obj.owner as object)
-        ? `Address: ${(obj.owner as { AddressOwner: string }).AddressOwner}`
-        : 'ObjectOwner' in (obj.owner as object)
-          ? `Object: ${(obj.owner as { ObjectOwner: string }).ObjectOwner}`
-          : 'Shared' in (obj.owner as object)
-            ? 'Shared Object'
-            : JSON.stringify(obj.owner)
-    : 'Unknown'
+  // Decode owner into display string + optional clickable ID
+  let ownerLabel = 'Unknown'
+  let ownerClickId: string | null = null
+  let ownerKind: 'object' | 'transaction' = 'object'
+
+  if (obj.owner) {
+    if (typeof obj.owner === 'string') {
+      ownerLabel = obj.owner
+    } else if ('AddressOwner' in (obj.owner as object)) {
+      const addr = (obj.owner as { AddressOwner: string }).AddressOwner
+      ownerLabel = addr
+      ownerClickId = addr
+      ownerKind = 'object'
+    } else if ('ObjectOwner' in (obj.owner as object)) {
+      const oid = (obj.owner as { ObjectOwner: string }).ObjectOwner
+      ownerLabel = oid
+      ownerClickId = oid
+      ownerKind = 'object'
+    } else if ('Shared' in (obj.owner as object)) {
+      ownerLabel = 'Shared Object'
+    } else {
+      ownerLabel = JSON.stringify(obj.owner)
+    }
+  }
 
   return (
     <div className="w-80 h-full bg-[#0d1117] border-l border-[#30363d] flex flex-col overflow-hidden">
@@ -52,9 +56,12 @@ export function ObjectPanel({ data, onClose, onTxClick }: Props) {
       <div className="flex items-center justify-between px-4 py-3 border-b border-[#30363d] bg-[#161b22]">
         <div>
           <h2 className="text-sm font-semibold text-white">Object Details</h2>
-          <p className="text-xs text-[#6fbcf0] font-mono mt-0.5">
+          <button
+            onClick={() => nav.openObject(obj.objectId)}
+            className="text-xs text-[#6fbcf0] font-mono mt-0.5 hover:underline"
+          >
             {obj.objectId.slice(0, 10)}…{obj.objectId.slice(-6)}
-          </p>
+          </button>
         </div>
         <button
           onClick={onClose}
@@ -69,34 +76,24 @@ export function ObjectPanel({ data, onClose, onTxClick }: Props) {
       <div className="flex-1 overflow-y-auto px-4 py-2">
         <Row
           label="Object ID"
-          value={
-            <span className="flex items-center flex-wrap">
-              {obj.objectId}
-              <CopyButton text={obj.objectId} />
-            </span>
-          }
+          value={<IdLink id={obj.objectId} kind="object" full />}
         />
         <Row label="Type" value={obj.type ?? 'N/A'} />
         <Row label="Version" value={obj.version ?? 'N/A'} />
         <Row label="Digest" value={obj.digest ?? 'N/A'} />
-        <Row label="Owner" value={ownerStr} />
+        <Row
+          label="Owner"
+          value={
+            ownerClickId
+              ? <IdLink id={ownerClickId} kind={ownerKind} full />
+              : ownerLabel
+          }
+        />
         {obj.previousTransaction && (
           <Row
             label="Previous Transaction"
             value={
-              <span className="flex items-center flex-wrap gap-1">
-                {onTxClick ? (
-                  <button
-                    onClick={() => onTxClick(obj.previousTransaction!)}
-                    className="text-[#fb923c] hover:underline font-mono break-all text-left"
-                  >
-                    {obj.previousTransaction}
-                  </button>
-                ) : (
-                  <span className="break-all">{obj.previousTransaction}</span>
-                )}
-                <CopyButton text={obj.previousTransaction} />
-              </span>
+              <IdLink id={obj.previousTransaction} kind="transaction" full />
             }
           />
         )}
@@ -119,11 +116,7 @@ export function ObjectPanel({ data, onClose, onTxClick }: Props) {
             <h3 className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold mb-2">
               Fields
             </h3>
-            <div className="bg-[#161b22] rounded-lg p-3 border border-[#30363d]">
-              <pre className="text-[10px] text-gray-300 whitespace-pre-wrap break-all leading-relaxed">
-                {JSON.stringify(content.fields, null, 2)}
-              </pre>
-            </div>
+            <FieldsRenderer fields={content.fields as Record<string, unknown>} />
           </div>
         )}
       </div>
@@ -143,6 +136,60 @@ export function ObjectPanel({ data, onClose, onTxClick }: Props) {
           View on Sui Explorer
         </a>
       </div>
+    </div>
+  )
+}
+
+/**
+ * Recursively render fields, making any hex or digest strings clickable.
+ */
+function FieldsRenderer({ fields }: { fields: Record<string, unknown> }) {
+  return (
+    <div className="bg-[#161b22] rounded-lg p-3 border border-[#30363d] space-y-1.5">
+      {Object.entries(fields).map(([k, v]) => (
+        <FieldEntry key={k} label={k} value={v} />
+      ))}
+    </div>
+  )
+}
+
+function FieldEntry({ label, value }: { label: string; value: unknown }) {
+  if (value === null || value === undefined) return null
+
+  if (typeof value === 'object' && !Array.isArray(value)) {
+    const obj = value as Record<string, unknown>
+    if ('fields' in obj && typeof obj.fields === 'object') {
+      return (
+        <div>
+          <div className="text-[10px] text-gray-500 mb-1">{label}</div>
+          <div className="pl-3 border-l border-[#30363d]">
+            <FieldsRenderer fields={obj.fields as Record<string, unknown>} />
+          </div>
+        </div>
+      )
+    }
+    return (
+      <div className="flex flex-col gap-0.5">
+        <span className="text-[10px] text-gray-500">{label}</span>
+        <pre className="text-[10px] text-gray-300 whitespace-pre-wrap break-all">
+          {JSON.stringify(value, null, 2)}
+        </pre>
+      </div>
+    )
+  }
+
+  const str = String(value)
+  const isObjectId = str.startsWith('0x') && str.length >= 40
+  const isTxDigest = !str.startsWith('0x') && str.length >= 40 && /^[A-Za-z0-9]+$/.test(str)
+
+  return (
+    <div className="flex flex-wrap items-start gap-x-2 gap-y-0.5">
+      <span className="text-[10px] text-gray-500 shrink-0">{label}:</span>
+      {isObjectId || isTxDigest ? (
+        <IdLink id={str} kind={isTxDigest ? 'transaction' : 'object'} />
+      ) : (
+        <span className="text-[10px] text-gray-300 break-all">{str}</span>
+      )}
     </div>
   )
 }

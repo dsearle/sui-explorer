@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Network } from '../../lib/suiClient'
 import { useLiveChain, type LiveBlock } from '../../hooks/useLiveChain'
+import { IdLink } from '../IdLink'
 
 const NETWORK_META: Record<Network, { label: string; accent: string; accentSoft: string }> = {
   mainnet: { label: 'Sui Mainnet', accent: '#6fbcf0', accentSoft: 'rgba(111, 188, 240, 0.2)' },
@@ -180,11 +181,10 @@ export function BlockstreamSkyline({ network }: Props) {
               {topTransactions.length === 0 ? (
                 <p className="text-sm text-gray-500">Transactions not available for this checkpoint.</p>
               ) : (
-                <div className="max-h-32 overflow-y-auto divide-y divide-[#1f2937] text-sm text-gray-200">
+                <div className="max-h-32 overflow-y-auto divide-y divide-[#1f2937]">
                   {topTransactions.map((tx) => (
                     <div key={tx} className="py-1.5 flex items-center justify-between gap-2">
-                      <span className="truncate font-mono text-xs text-gray-400">{tx}</span>
-                      <span className="text-[0.65rem] text-gray-500 uppercase">TX</span>
+                      <IdLink id={tx} kind="transaction" full />
                     </div>
                   ))}
                 </div>

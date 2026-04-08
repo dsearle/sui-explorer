@@ -36,15 +36,17 @@ const TIER_META: Record<ProtocolMetrics['activityTier'], { label: string; color:
 }
 
 
-export function useOnChainMetrics() {
+export function useOnChainMetrics(network: import('../lib/suiClient').Network = 'mainnet') {
   const [metrics, setMetrics] = useState<Map<string, ProtocolMetrics>>(new Map())
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     let cancelled = false
+    setLoading(true)
+    setMetrics(new Map())
 
     async function fetchAll() {
-      const client = getClient('mainnet')
+      const client = getClient(network)
       const result = new Map<string, ProtocolMetrics>()
 
       // Fetch all protocols with key objects in parallel batches
@@ -132,7 +134,7 @@ export function useOnChainMetrics() {
 
     fetchAll()
     return () => { cancelled = true }
-  }, [])
+  }, [network])
 
   return { metrics, loading }
 }

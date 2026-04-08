@@ -9,6 +9,12 @@ import { PackageViewer } from './components/PackageViewer'
 import { Directory } from './components/Directory'
 import { ProtocolDetail } from './components/ProtocolDetail'
 import { ChainHero } from './components/ChainHero'
+import { FinalityRings } from './components/FinalityRings'
+import { ChainTerrain } from './components/ChainTerrain'
+import { NavigationProvider } from './lib/NavigationContext'
+import { useWallet } from './lib/WalletContext'
+import { WalletButton } from './components/WalletButton'
+import { AdminPanel } from './components/AdminPanel'
 import { useObjectGraph } from './hooks/useObjectGraph'
 import { useTransaction } from './hooks/useTransaction'
 import { usePackage } from './hooks/usePackage'
@@ -17,7 +23,7 @@ import type { Protocol } from './data/protocols'
 import { PROTOCOLS } from './data/protocols'
 import type { Network } from './lib/suiClient'
 
- type Mode = 'home' | 'directory' | 'protocol' | 'object' | 'transaction' | 'package'
+type Mode = 'home' | 'directory' | 'protocol' | 'object' | 'transaction' | 'package' | 'admin'
 
 const SEARCH_MODES = ['object', 'transaction', 'package'] as const
 type SearchMode = typeof SEARCH_MODES[number]
@@ -269,20 +275,23 @@ export default function App() {
     return pkg.loading
   }, [searchMode, objectGraph.loading, transaction.loading, pkg.loading])
 
-  const showSearchBar = !['home', 'directory', 'protocol'].includes(mode)
+  const showSearchBar = !['home', 'directory', 'protocol', 'admin'].includes(mode)
 
-  type NavKey = 'home' | 'directory' | 'transactions' | 'packages'
+  type NavKey = 'home' | 'directory' | 'transactions' | 'packages' | 'admin'
+  const { isAdmin } = useWallet()
   const navItems: { key: NavKey; label: string }[] = [
     { key: 'home', label: 'Home' },
     { key: 'directory', label: 'Directory' },
     { key: 'transactions', label: 'Transactions' },
     { key: 'packages', label: 'Packages' },
+    ...(isAdmin ? [{ key: 'admin' as NavKey, label: '⚙ Admin' }] : []),
   ]
 
   const activeNav = useMemo<NavKey>(() => {
     if (mode === 'home') return 'home'
     if (mode === 'directory' || mode === 'protocol') return 'directory'
     if (mode === 'package') return 'packages'
+    if (mode === 'admin') return 'admin'
     return 'transactions'
   }, [mode])
 
@@ -295,6 +304,9 @@ export default function App() {
       case 'directory':
         setMode('directory')
         updateUrl('directory', '', network)
+        break
+      case 'admin':
+        setMode('admin')
         break
       case 'transactions':
         setSearchMode('transaction')
@@ -317,7 +329,14 @@ export default function App() {
     updateUrl('home', '', network)
   }, [network])
 
+  const navHandlers = useMemo(() => ({
+    openObject: (id: string) => openObject(id),
+    openTransaction: (digest: string) => openTransaction(digest),
+    openPackage: (id: string) => openPackage(id),
+  }), [openObject, openTransaction, openPackage])
+
   return (
+    <NavigationProvider handlers={navHandlers}>
     <div className="h-screen w-screen flex flex-col bg-[#0d1117] overflow-hidden">
       {/* Top bar */}
       <header className="flex items-center gap-3 px-4 py-2.5 border-b border-[#30363d] bg-[#0d1117] z-10 flex-shrink-0">
@@ -335,7 +354,7 @@ export default function App() {
           </button>
         )}
 
-        {/* Logo — always clickable to go home */}
+        {/* Logo - always clickable to go home */}
         <button
           onClick={handleHomeClick}
           className="flex items-center gap-2 flex-shrink-0 group"
@@ -399,13 +418,18 @@ export default function App() {
             example={MODE_META[searchMode].example}
           />
         ) : (
-          /* On directory/protocol — a global search hint */
+          /* On directory/protocol - a global search hint */
           <div className="flex-1" />
         )}
 
         {/* Network selector */}
         <div className="flex-shrink-0">
           <NetworkSelector network={network} onChange={handleNetworkChange} />
+        </div>
+
+        {/* Wallet */}
+        <div className="flex-shrink-0">
+          <WalletButton />
         </div>
 
         {/* Object detail toggle */}
@@ -448,23 +472,13 @@ export default function App() {
           <div className="flex-1 overflow-y-auto px-4 py-6 space-y-6">
             <ChainHero network={network} />
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <article className="bg-[#0b1220] border border-[#1f2937] rounded-2xl p-5">
-                <p className="text-xs uppercase tracking-[0.3em] text-gray-500">Coming Soon</p>
-                <h3 className="text-white text-xl font-semibold mt-1">Finality Rings</h3>
-                <p className="text-sm text-gray-400 mt-2">
-                  Orbit-style visualization that maps finality latency and consensus health in real time.
-                </p>
-              </article>
-              <article className="bg-[#0b1220] border border-[#1f2937] rounded-2xl p-5">
-                <p className="text-xs uppercase tracking-[0.3em] text-gray-500">Coming Soon</p>
-                <h3 className="text-white text-xl font-semibold mt-1">Chain Terrain</h3>
-                <p className="text-sm text-gray-400 mt-2">
-                  Package “topography” driven by live activity so hotspots ripple across a 3D landscape.
-                </p>
-              </article>
+              <FinalityRings network={network} />
+              <ChainTerrain network={network} />
             </div>
           </div>
         )}
+
+        {mode === 'admin' && <AdminPanel />}
 
         {mode === 'directory' && (
           <Directory
@@ -504,7 +518,6 @@ export default function App() {
               <ObjectPanel
                 data={objectGraph.objectData}
                 onClose={() => setPanelOpen(false)}
-                onTxClick={handleTxClick}
               />
             )}
           </>
@@ -518,6 +531,7 @@ export default function App() {
             onObjectClick={handleObjectFromTx}
           />
         )}
+        {/* onObjectClick kept for back-compat; TransactionInspector also uses NavigationContext */}
 
         {mode === 'package' && (
           <PackageViewer
@@ -531,5 +545,6 @@ export default function App() {
         )}
       </main>
     </div>
+    </NavigationProvider>
   )
 }

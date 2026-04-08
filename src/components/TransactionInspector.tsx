@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import type { SuiTransactionBlockResponse, SuiObjectChange } from '@mysten/sui/jsonRpc'
+import { IdLink } from './IdLink'
+import { useNavigation } from '../lib/NavigationContext'
 
 interface Props {
   data: SuiTransactionBlockResponse | null
@@ -35,20 +37,14 @@ function CopyBtn({ text }: { text: string }) {
   )
 }
 
-function ObjectChangeRow({
-  change,
-  onObjectClick,
-}: {
-  change: SuiObjectChange
-  onObjectClick: (id: string) => void
-}) {
+function ObjectChangeRow({ change }: { change: SuiObjectChange }) {
+  const nav = useNavigation()
   let objectId = ''
   let label = ''
   let badgeColor = ''
+  let idKind: 'object' | 'package' = 'object'
 
-  if ('objectId' in change) {
-    objectId = change.objectId
-  }
+  if ('objectId' in change) objectId = change.objectId
 
   switch (change.type) {
     case 'created':
@@ -71,6 +67,7 @@ function ObjectChangeRow({
       label = 'Published'
       badgeColor = 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
       objectId = (change as { packageId: string }).packageId
+      idKind = 'package'
       break
     case 'wrapped':
       label = 'Wrapped'
@@ -87,8 +84,9 @@ function ObjectChangeRow({
         {typeStr && <div className="text-[10px] text-gray-500 truncate">{typeStr}</div>}
         {objectId && (
           <button
-            onClick={() => objectId && onObjectClick(objectId)}
-            className="text-xs font-mono text-[#6fbcf0] hover:underline truncate block text-left"
+            onClick={() => idKind === 'package' ? nav.openPackage(objectId) : nav.openObject(objectId)}
+            className={`text-xs font-mono hover:underline truncate block text-left
+              ${idKind === 'package' ? 'text-[#a78bfa]' : 'text-[#6fbcf0]'}`}
           >
             {shortId(objectId)}
           </button>
@@ -99,7 +97,7 @@ function ObjectChangeRow({
   )
 }
 
-export function TransactionInspector({ data, loading, error, onObjectClick }: Props) {
+export function TransactionInspector({ data, loading, error }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>('overview')
 
   if (loading) {
@@ -186,9 +184,9 @@ export function TransactionInspector({ data, loading, error, onObjectClick }: Pr
             <span className="text-xs text-gray-500">Checkpoint {data.checkpoint}</span>
           )}
         </div>
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-mono text-gray-300 break-all">{data.digest}</span>
-          <CopyBtn text={data.digest} />
+        {/* Digest — clickable to re-navigate (useful when arriving from elsewhere) */}
+        <div className="flex items-center gap-1">
+          <IdLink id={data.digest} kind="transaction" full />
         </div>
       </div>
 
@@ -246,12 +244,11 @@ export function TransactionInspector({ data, loading, error, onObjectClick }: Pr
               </div>
             )}
 
-            {/* Sender + inputs */}
+            {/* Sender */}
             {tx && (
               <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-4">
                 <h3 className="text-xs text-gray-400 uppercase tracking-wider font-semibold mb-3">Sender</h3>
-                <div className="text-xs font-mono text-[#6fbcf0] break-all">{tx.sender}</div>
-                <CopyBtn text={tx.sender} />
+                <IdLink id={tx.sender} kind="object" full />
               </div>
             )}
 
@@ -267,17 +264,21 @@ export function TransactionInspector({ data, loading, error, onObjectClick }: Pr
                     const isPos = amount >= 0n
                     const coinType = bc.coinType.split('::').pop() ?? bc.coinType
                     const ownerStr = typeof bc.owner === 'object' && 'AddressOwner' in bc.owner
-                      ? bc.owner.AddressOwner
+                      ? (bc.owner as { AddressOwner: string }).AddressOwner
                       : JSON.stringify(bc.owner)
+                    const isOwnerAddr = ownerStr.startsWith('0x')
                     return (
-                      <div key={i} className="flex items-center justify-between text-xs">
-                        <div className="flex items-center gap-2">
+                      <div key={i} className="flex items-center justify-between text-xs gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
                           <Badge color={isPos ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}>
                             {coinType}
                           </Badge>
-                          <span className="text-gray-400 font-mono">{shortId(ownerStr)}</span>
+                          {isOwnerAddr
+                            ? <IdLink id={ownerStr} kind="object" />
+                            : <span className="text-gray-400 font-mono text-[10px]">{ownerStr}</span>
+                          }
                         </div>
-                        <span className={`font-mono font-semibold ${isPos ? 'text-green-400' : 'text-red-400'}`}>
+                        <span className={`font-mono font-semibold flex-shrink-0 ${isPos ? 'text-green-400' : 'text-red-400'}`}>
                           {isPos ? '+' : ''}{Number(amount).toLocaleString()} MIST
                         </span>
                       </div>
@@ -300,8 +301,8 @@ export function TransactionInspector({ data, loading, error, onObjectClick }: Pr
                     )
                     .map((t, i) => (
                       <div key={i} className="flex items-center gap-2 text-xs font-mono bg-[#0d1117]
-                        rounded-lg p-2 border border-[#30363d]">
-                        <span className="text-[#a78bfa]">{shortId(t.MoveCall.package)}</span>
+                        rounded-lg p-2 border border-[#30363d] flex-wrap">
+                        <IdLink id={t.MoveCall.package} kind="package" />
                         <span className="text-gray-500">::</span>
                         <span className="text-[#6fbcf0]">{t.MoveCall.module}</span>
                         <span className="text-gray-500">::</span>
@@ -322,7 +323,7 @@ export function TransactionInspector({ data, loading, error, onObjectClick }: Pr
             ) : (
               <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-4">
                 {objectChanges.map((change, i) => (
-                  <ObjectChangeRow key={i} change={change} onObjectClick={onObjectClick} />
+                  <ObjectChangeRow key={i} change={change} />
                 ))}
               </div>
             )}
@@ -345,12 +346,19 @@ export function TransactionInspector({ data, loading, error, onObjectClick }: Pr
                       {event.type.split('::').slice(-2).join('::')}
                     </span>
                   </div>
-                  <div className="text-[10px] text-gray-500 font-mono mb-2">{event.type}</div>
+                  {/* Package ID in event type is clickable */}
+                  {(() => {
+                    const parts = event.type.split('::')
+                    const pkgId = parts[0]
+                    return (
+                      <div className="text-[10px] text-gray-500 font-mono mb-2 flex items-center gap-1 flex-wrap">
+                        <IdLink id={pkgId} kind="package" />
+                        <span>::{parts.slice(1).join('::')}</span>
+                      </div>
+                    )
+                  })()}
                   {event.parsedJson != null && (
-                    <pre className="text-[10px] text-gray-300 bg-[#0d1117] rounded-lg p-3
-                      border border-[#30363d] overflow-x-auto whitespace-pre-wrap break-all">
-                      {JSON.stringify(event.parsedJson as Record<string, unknown>, null, 2)}
-                    </pre>
+                    <EventJson data={event.parsedJson as Record<string, unknown>} />
                   )}
                 </div>
               ))
@@ -368,6 +376,33 @@ export function TransactionInspector({ data, loading, error, onObjectClick }: Pr
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+/** Render event JSON, making hex IDs and digests clickable */
+function EventJson({ data }: { data: Record<string, unknown> }) {
+  return (
+    <div className="bg-[#0d1117] rounded-lg p-3 border border-[#30363d] space-y-1">
+      {Object.entries(data).map(([k, v]) => {
+        const str = typeof v === 'string' ? v : null
+        const isHexId = str && str.startsWith('0x') && str.length >= 40
+        const isTxDigest = str && !str.startsWith('0x') && str.length >= 40 && /^[A-Za-z0-9]+$/.test(str)
+        return (
+          <div key={k} className="flex flex-wrap items-start gap-x-2 gap-y-0.5 text-[10px]">
+            <span className="text-gray-500">{k}:</span>
+            {isHexId ? (
+              <IdLink id={str!} kind="object" />
+            ) : isTxDigest ? (
+              <IdLink id={str!} kind="transaction" />
+            ) : (
+              <span className="text-gray-300 break-all">
+                {typeof v === 'object' ? JSON.stringify(v) : String(v)}
+              </span>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }
